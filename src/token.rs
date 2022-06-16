@@ -1,15 +1,27 @@
 use std::fmt::{Display, Error, Formatter};
 
+#[derive(Debug, Clone)]
 pub struct Token {
     pub location: Location,
     pub token_type: TokenType,
     pub value: Option<String>,
 }
+
+impl Default for Token {
+    fn default() -> Self {
+        Token {
+            location: Location::new(1, 1),
+            token_type: TokenType::ILLEGAL,
+            value: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
     String,       // "string"
     Number,       // 12345 | 123.45 | 123.45e6 | 123.45e+6 | 123.45e-6
-    Boolean,      // true | false
-    Null,         // null
+    Ident,        // null, true, false
     LeftBrace,    // {
     RightBrace,   // }
     LeftBracket,  // [
@@ -26,8 +38,7 @@ impl Display for TokenType {
         match self {
             TokenType::String => write!(f, "string"),
             TokenType::Number => write!(f, "number"),
-            TokenType::Boolean => write!(f, "boolean"),
-            TokenType::Null => write!(f, "null"),
+            TokenType::Ident => write!(f, "Ident"),
             TokenType::LeftBrace => write!(f, "{{"),
             TokenType::RightBrace => write!(f, "}}"),
             TokenType::LeftBracket => write!(f, "["),
@@ -43,8 +54,8 @@ impl Display for TokenType {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Location {
-    line: usize,
-    column: usize,
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Location {

@@ -1,4 +1,4 @@
-#toyjson
+# toyjson
 
 JSONパーサの実装
 
@@ -16,12 +16,14 @@ JSONパーサの実装
 - array
 - object
 
+```
 ws = (
     %x20 / ; Space
     %x09 / ; Horizontal Tab
     %x0A / ; Line feed or New Line
     %x0D / ; Carriage return
 )
+```
 
 ## 字句解析器を実装
 
@@ -51,6 +53,7 @@ zero = %x30
 ```
 
 JSONで許可されている数値表現は以下の
+
 - 整数
 - 浮動小数点
 - 指数表記
