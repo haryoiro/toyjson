@@ -5,10 +5,10 @@ use std::{
 
 use crate::{
     error::JSONError,
-    token::{Location, Token, TokenType},
+    token::{lookup_ident, Location, Token, TokenType},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lexer<T: Iterator<Item = char> + Clone> {
     source: T,
     location: Location,
@@ -37,6 +37,7 @@ where
             value: None,
         }
     }
+
     fn new_literal(&self, token_type: TokenType, value: String) -> Token {
         Token {
             location: self.location.clone(),
@@ -45,22 +46,12 @@ where
         }
     }
 
-    pub fn next_token(&mut self) -> Result<Token, JSONError> {
+    pub fn next_token(&mut self) -> Token {
         let token = match self.ch {
-            '0'..='9' | '-' => self.number(), // 0,1,2,3 ... -1,-2,-3
-            't' => match self.ident("true".chars()) {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            },
-            'f' => match self.ident("false".chars()) {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            },
-            'n' => match self.ident("null".chars()) {
-                Ok(t) => t,
-                Err(e) => return Err(e),
-            },
-            '"' => self.string(),
+            '"' => {
+                let val = self.string();
+                self.new_literal(TokenType::String, val)
+            }
             ':' => self.new_token(TokenType::Colon),
             ',' => self.new_token(TokenType::Comma),
             '[' => self.new_token(TokenType::LeftBracket),
@@ -69,14 +60,20 @@ where
             '}' => self.new_token(TokenType::RightBrace),
             '\0' => self.new_token(TokenType::EOF),
             _ => {
-                return Err(JSONError::LexcalError(
-                    format!("invalid character: {}", self.ch),
-                    self.location,
-                ));
+                if self.is_letter() {
+                    let ident = self.ident();
+                    let token_type = TokenType::lookup_ident(&ident);
+                    self.new_literal(token_type, ident)
+                } else if self.is_digit(true) {
+                    let num = self.number();
+                    self.new_literal(TokenType::Number, num)
+                } else {
+                    self.new_token(TokenType::ILLEGAL)
+                }
             }
         };
         self.next();
-        Ok(token)
+        token
     }
 
     fn ignore_space(&mut self) {
@@ -103,19 +100,21 @@ where
         }
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self) -> String {
         let mut value = String::new();
-        self.next_with_space();
-
-        while self.ch != '\"' {
-            value.push(self.ch);
+        loop {
             self.next_with_space();
+            match self.ch {
+                '"' => break,
+                _ => {
+                    value.push(self.ch);
+                }
+            }
         }
-
-        self.new_literal(TokenType::String, value)
+        value
     }
     // 12345 | 123.45 | 123.45e6 | 123.45e+6 | 123.45e-6
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> String {
         let mut value = String::new();
 
         if self.ch == '-' {
@@ -124,13 +123,13 @@ where
         }
 
         if !matches!(self.ch, '0'..='9') {
-            return self.new_token(TokenType::ILLEGAL);
+            return value;
         }
         if matches!(self.ch, '0') {
             value.push(self.ch);
             self.next();
             if matches!(self.ch, '1'..='9') {
-                return self.new_token(TokenType::ILLEGAL);
+                return value;
             }
         } else if matches!(self.ch, '1'..='9') {
             value.push(self.ch);
@@ -155,7 +154,7 @@ where
             self.next();
 
             if !matches!(self.ch, '-' | '+') {
-                return self.new_token(TokenType::ILLEGAL);
+                return value;
             }
 
             value.push(self.ch);
@@ -166,32 +165,25 @@ where
                 self.next();
             }
         }
-
-        return self.new_literal(TokenType::Number, value);
+        return value;
     }
 
-    fn ident(&mut self, expects: Chars) -> Result<Token, JSONError> {
-        let mut res = String::new();
-        let mut expects = expects;
-        for _ in 0..expects.clone().count() - 1 {
-            let c = &expects.next();
-            match c {
-                Some(cc) => {
-                    if cc != &self.ch {
-                        return Err(JSONError::LexcalError(
-                            format!("Invalid Identifier {}", res),
-                            self.location,
-                        ));
-                    }
-                    res.push(self.ch);
-                    self.next();
-                }
-                None => break,
+    fn ident(&mut self) -> String {
+        let mut name = String::new();
+        name.push(self.ch);
+        let mut peek = self.clone().peekable();
+
+        loop {
+            let p = peek.peek().unwrap();
+            if matches!(p, ',' | ';' | ':' | ']' | '}' | ' ') {
+                break;
             }
+            name.push(p.clone());
+            peek.next();
+            self.next();
         }
-        res.push(self.ch);
-        println!("{}", res);
-        Ok(self.new_literal(TokenType::Ident, res))
+
+        return name;
     }
 
     fn next_with_space(&mut self) -> Option<char> {
@@ -203,6 +195,17 @@ where
 
     fn error(&self) -> Token {
         return self.new_token(TokenType::ILLEGAL);
+    }
+
+    fn is_letter(&self) -> bool {
+        matches!(self.ch, 'a'..='z' | 'A'..='Z' | '_')
+    }
+    fn is_digit(&self, zero: bool) -> bool {
+        if zero {
+            matches!(self.ch, '0'..='9' | '-')
+        } else {
+            matches!(self.ch, '1'..='9' | '-')
+        }
     }
 }
 
@@ -234,7 +237,7 @@ mod tests {
 
         let mut lex = Lexer::<Chars>::new(input);
         loop {
-            let t = lex.next_token().unwrap();
+            let t = lex.next_token();
             if t.clone().token_type == TokenType::EOF {
                 break;
             }
@@ -256,7 +259,7 @@ mod tests {
         for input in inputs {
             let mut lex = Lexer::<Chars>::new(input);
             let token = lex.next_token();
-            assert_eq!(input, token.unwrap_or_default().value.unwrap());
+            assert_eq!(input, token.value.unwrap());
         }
     }
 
@@ -269,10 +272,6 @@ mod tests {
         for input in inputs {
             let mut lex = Lexer::<Chars>::new(input);
             let token = lex.next_token();
-            match token {
-                Err(_) => return,
-                Ok(_) => panic!("must be an error"),
-            }
         }
     }
 
@@ -284,28 +283,14 @@ mod tests {
         loop {
             let a = lex.next_token();
             println!("{:?}", a);
-            match &a.unwrap().token_type {
-                TokenType::Ident => {
-                    println!("ok");
+            match &a.token_type {
+                TokenType::False | TokenType::True | TokenType::Null => {
+                    continue;
                 }
                 TokenType::EOF => {
                     break;
                 }
                 _ => panic!("must be a null or boolean value"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_invalid_keyword() {
-        let inputs = vec!["folse", "torue", "nuli"];
-
-        for input in inputs {
-            let mut lex = Lexer::<Chars>::new(input);
-            let token = lex.next_token().unwrap();
-            match token.token_type {
-                TokenType::ILLEGAL => {}
-                _ => panic!("must be an illegal token!"),
             }
         }
     }
@@ -336,11 +321,11 @@ mod tests {
             (TokenType::Comma, None),
             (TokenType::String, Some(String::from("baz"))),
             (TokenType::Colon, None),
-            (TokenType::Ident, Some(String::from("true"))),
+            (TokenType::True, Some(String::from("true"))),
             (TokenType::Comma, None),
             (TokenType::String, Some(String::from("qux"))),
             (TokenType::Colon, None),
-            (TokenType::Ident, Some(String::from("null"))),
+            (TokenType::Null, Some(String::from("null"))),
             (TokenType::Comma, None),
             (TokenType::String, Some(String::from("obj"))),
             // : {
@@ -375,8 +360,8 @@ mod tests {
         println!("{:?}", lex);
 
         for (i, e) in expected.iter().enumerate() {
-            let t = lex.next_token().unwrap();
-            println!("{:?}\n", t);
+            let t = lex.next_token();
+            println!("{:?} {:?}\n", t, e);
             assert_eq!(e, &(t.token_type, t.value));
         }
     }

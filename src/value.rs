@@ -1,26 +1,35 @@
-use std::fmt::{Display, Error, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Error, Formatter},
+};
 
-enum Value {
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum Value {
     String(String),
     Number(usize),
-    Boolean(Boolean),
-    Object(Object),
-    Array(Array),
+    Boolean(bool),
+    Object(Vec<(String, Box<Value>)>),
+    Array(Vec<Value>),
+    Null,
+    Error(String),
 }
 
-enum Boolean {
-    True,
-    False,
-}
-
-impl Display for Boolean {
+impl Display for Value {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         match self {
-            Boolean::True => write!(f, "true"),
-            Boolean::False => write!(f, "false"),
+            Value::String(s) => write!(f, "{}", s),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::Boolean(b) => write!(f, "{}", b),
+            Value::Object(o) => write!(f, "{:?}", o),
+            Value::Array(v) => {
+                write!(f, "[")?;
+                for i in v {
+                    write!(f, "{}", i)?;
+                }
+                write!(f, "]")
+            }
+            Value::Null => write!(f, "null"),
+            Value::Error(e) => write!(f, "{}", e),
         }
     }
 }
-
-struct Object((String, Box<Value>));
-struct Array(Vec<Value>);
